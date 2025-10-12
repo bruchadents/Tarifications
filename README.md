@@ -1,2 +1,3 @@
 # Tarifications
-Tarifs bruch a dents 
+Tarifs bruch a dents complet 
+
