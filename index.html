@@ -384,6 +384,31 @@ body::before {
   .chip-pop { font-size: 5pt; padding: 0.5pt 2pt; }
 }
   </style>
+<style id="cart-styles">
+/* === CART STYLES === */
+#cart-fab{position:fixed;right:16px;bottom:16px;background:var(--color-primary,#26214c);color:#fff;border-radius:999px;padding:10px 14px;box-shadow:0 8px 20px rgba(0,0,0,.15);cursor:pointer;font-weight:600;z-index:9999;user-select:none;}
+#cart-drawer{position:fixed;right:0;top:0;height:100vh;width:380px;max-width:92vw;background:#fff;box-shadow:-8px 0 20px rgba(0,0,0,.15);transform:translateX(100%);transition:transform .25s ease;z-index:10000;display:flex;flex-direction:column;}
+#cart-drawer.open{transform:translateX(0);}
+#cart-overlay{position:fixed;inset:0;background:rgba(0,0,0,.25);backdrop-filter:blur(2px);opacity:0;pointer-events:none;transition:opacity .25s ease;z-index:9998;}
+#cart-overlay.show{opacity:1;pointer-events:auto;}
+.cart-header{display:flex;justify-content:space-between;align-items:center;padding:14px 16px;border-bottom:1px solid var(--color-hairline,#e8e8ed);}
+.cart-items{padding:6px 12px;overflow:auto;flex:1;}
+.cart-item{display:grid;grid-template-columns:1fr auto;gap:8px;align-items:center;border-bottom:1px dashed rgba(38,33,76,.15);padding:10px 4px;}
+.cart-item .meta{display:flex;flex-direction:column;font-size:14px;}
+.cart-item .qty{display:inline-flex;align-items:center;gap:4px;border:1px solid var(--color-hairline,#e8e8ed);border-radius:8px;padding:2px 6px;}
+.cart-item .qty button{background:transparent;border:none;font-size:16px;cursor:pointer;padding:2px 6px;}
+.cart-item .price{font-weight:600;color:var(--color-primary,#26214c);}
+.cart-footer{border-top:1px solid var(--color-hairline,#e8e8ed);padding:12px;}
+.cart-line{display:flex;justify-content:space-between;align-items:center;margin:8px 0 12px;font-size:16px;}
+.cart-actions{display:flex;gap:8px;}
+.btn-outline{border:1px solid var(--color-hairline,#e8e8ed);background:#fff;border-radius:8px;padding:8px 12px;cursor:pointer;}
+.price-list li .add-to-cart{margin-left:10px;font-size:12px;padding:4px 8px;border-radius:8px;border:1px solid var(--color-hairline,#e8e8ed);background:#fff;cursor:pointer;}
+.price-list li:hover .add-to-cart{border-color:var(--color-accent,#c9a300);}
+#download-pdf-bar{position:sticky;bottom:0;display:flex;justify-content:center;padding:10px 0;background:rgba(255,255,255,.75);backdrop-filter:blur(6px);}
+#download-pdf{display:inline-block;padding:10px 14px;border-radius:10px;text-decoration:none;background:var(--color-accent,#c9a300);color:#111;font-weight:600;}
+@media print{ body * { display:none !important; } }
+/* === /CART STYLES === */
+</style>
 </head>
 <body>
 
@@ -414,7 +439,6 @@ body::before {
   <div class="banner">
     <div class="container banner-inner">
       <p class="banner-text">Tarifs 2025 — Devise EUR</p>
-      <a class="btn" onclick="window.print();">Télécharger le PDF</a>
     </div>
   </div>
 </header>
@@ -559,8 +583,8 @@ body::before {
           <li><span>Dent ( usiné)</span><strong>12,00&nbsp;€</strong></li>
           <li><span>Finition</span><strong>85,00&nbsp;€</strong></li>
           <li><span>Flex par secteur</span><strong>65,00&nbsp;€</strong></li>
-          <li><span>Polymérisation</span><strong>80,00&nbsp;€</strong></li>
-          <li><span>Polymérisation direct</span><strong>—</strong></li>
+          <li><span>Polymérisation</span><strong>60,00&nbsp;€</strong></li>
+          <li><span>Polymérisation direct</span><strong>80,00&nbsp;€</strong></li>
         </ul>
       </div>
 
@@ -649,5 +673,98 @@ body::before {
   </div>
 </footer>
 
+<!-- === CART UI (fresh) === -->
+<div id="cart-fab" aria-label="Ouvrir le panier">
+  🧺 <span id="cart-count">0</span> — <span id="cart-total">0,00 €</span>
+</div>
+<div id="cart-drawer" aria-hidden="true">
+  <div class="cart-header">
+    <strong>Panier (Devis)</strong>
+    <button id="cart-close" aria-label="Fermer">✕</button>
+  </div>
+  <div id="cart-items" class="cart-items"></div>
+  <div class="cart-footer">
+    <div class="cart-line">
+      <span>Total</span>
+      <strong id="cart-sum">0,00 €</strong>
+    </div>
+    <div class="cart-actions">
+      <button id="cart-clear" class="btn-outline">Vider</button>
+    </div>
+    <small style="opacity:.7;display:block;margin-top:8px;">Visible uniquement sur le site (aucune impression).</small>
+  </div>
+</div>
+<div id="cart-overlay" aria-hidden="true"></div>
+<div id="download-pdf-bar">
+  <a id="download-pdf" href="Tarifs 2025 — BRUCH À DENTS.pdf" download>📄 Télécharger le PDF</a>
+</div>
+<!-- === /CART UI === -->
+<script>(function(){
+  const fr = new Intl.NumberFormat('fr-FR',{style:'currency',currency:'EUR'});
+  const parseEuro = (t)=>{ if(!t) return 0; const n=String(t).replace(/\s/g,'').replace(/&nbsp;/g,'').replace(/\u00A0/g,'').replace('€','').replace(',', '.'); const v=parseFloat(n); return isNaN(v)?0:v; };
+  const fmt = (n)=>fr.format(Math.round(n*100)/100);
+  const norm = (s)=> (s||'').toLowerCase().replace(/\s+/g,' ').trim();
+  const KEY='bad_cart_index1_v1';
+  let cart = JSON.parse(localStorage.getItem(KEY)||'[]');
+  const fab=document.getElementById('cart-fab'),drawer=document.getElementById('cart-drawer'),overlay=document.getElementById('cart-overlay');
+  const itemsEl=document.getElementById('cart-items'),countEl=document.getElementById('cart-count'),totalFabEl=document.getElementById('cart-total'),sumEl=document.getElementById('cart-sum');
+
+  function findPriceByName(target){ const t=norm(target); let found=null; document.querySelectorAll('li').forEach(li=>{ const nameNode=li.querySelector('span')||li.firstChild; const priceNode=li.querySelector('strong'); if(!nameNode||!priceNode) return; const name=norm(nameNode.textContent); if(name===t){ const v=parseEuro(priceNode.textContent); if(!isNaN(v)) found=v; }}); return found; }
+  function postAddCompanions(added){ const n=norm(added);
+    if(n.includes('complet usiné ou dupliquer')||n.includes('complet traditionnel')){ const comp='Dent ( usiné)'; const unit=findPriceByName(comp); if(unit!=null){ const idx=cart.findIndex(i=>norm(i.name)===norm(comp)&&i.price===unit); if(idx>=0) cart[idx].qty+=14; else cart.push({name:comp,price:unit,qty:14}); persist(); render(); } }
+    if(n.includes('zircone transvissée')){ const comp='Collage sur Tbase'; const unit=findPriceByName(comp); if(unit!=null){ const idx=cart.findIndex(i=>norm(i.name)===norm(comp)&&i.price===unit); if(idx>=0) cart[idx].qty+=1; else cart.push({name:comp,price:unit,qty:1}); persist(); render(); } }
+  }
+
+  function addToCart(name, price, qty=1){ const idx=cart.findIndex(i=>i.name===name&&i.price===price); if(idx>=0) cart[idx].qty+=qty; else cart.push({name,price,qty}); persist(); render(); }
+  function removeOne(i){ cart[i].qty=Math.max(0,cart[i].qty-1); if(cart[i].qty===0) cart.splice(i,1); persist(); render(); }
+  function addOne(i){ cart[i].qty+=1; persist(); render(); }
+  function removeLine(i){ cart.splice(i,1); persist(); render(); }
+  function clearCart(){ cart=[]; persist(); render(); }
+  function sum(){ return cart.reduce((a,i)=>a+i.price*i.qty,0); }
+  function count(){ return cart.reduce((a,i)=>a+i.qty,0); }
+  function persist(){ localStorage.setItem(KEY, JSON.stringify(cart)); }
+
+  function render(){
+    countEl.textContent=String(count());
+    totalFabEl.textContent=fmt(sum());
+    sumEl.textContent=fmt(sum());
+    itemsEl.innerHTML='';
+    if(cart.length===0){ const d=document.createElement('div'); d.style.padding='12px'; d.style.color='var(--color-muted,#6b7280)'; d.textContent='Votre panier est vide.'; itemsEl.appendChild(d); }
+    else{
+      cart.forEach((it,idx)=>{
+        const row=document.createElement('div'); row.className='cart-item';
+        row.innerHTML=`<div class="meta"><span>${it.name}</span><div class="qty"><button aria-label="Retirer 1">−</button><span>${it.qty}</span><button aria-label="Ajouter 1">+</button><button aria-label="Supprimer" title="Supprimer" style="margin-left:6px;">🗑</button></div></div><div class="price">${fmt(it.price*it.qty)}</div>`;
+        const [minusBtn, qtyEl, plusBtn, delBtn]=row.querySelectorAll('.qty > *');
+        minusBtn.addEventListener('click', ()=>removeOne(idx));
+        plusBtn.addEventListener('click', ()=>addOne(idx));
+        delBtn.addEventListener('click', ()=>removeLine(idx));
+        itemsEl.appendChild(row);
+      });
+    }
+  }
+
+  function ensureButtons(){
+    let lis=Array.from(document.querySelectorAll('.price-list li'));
+    if(lis.length===0){ lis=Array.from(document.querySelectorAll('li')).filter(li=>/\€/.test(li.textContent)&&li.querySelector('strong')); }
+    lis.forEach(li=>{
+      const nameNode=li.querySelector('span')||li.firstChild; const priceNode=li.querySelector('strong'); if(!nameNode||!priceNode) return;
+      const priceVal=parseEuro(priceNode.textContent); if(isNaN(priceVal)||priceVal<=0) return;
+      if(li.querySelector('.add-to-cart')) return;
+      const btn=document.createElement('button'); btn.className='add-to-cart'; btn.type='button'; btn.textContent='Ajouter';
+      btn.addEventListener('click',(e)=>{ e.stopPropagation(); const name=(nameNode.textContent||'').replace(/\s+/g,' ').trim(); addToCart(name,priceVal,1); postAddCompanions(name); });
+      if(priceNode.parentElement===li) li.insertBefore(btn, priceNode); else priceNode.parentElement.insertBefore(btn, priceNode);
+    });
+  }
+
+  function openDrawer(){ drawer.classList.add('open'); overlay.classList.add('show'); drawer.setAttribute('aria-hidden','false'); }
+  function closeDrawer(){ drawer.classList.remove('open'); overlay.classList.remove('show'); drawer.setAttribute('aria-hidden','true'); }
+
+  fab.addEventListener('click', openDrawer);
+  document.getElementById('cart-close').addEventListener('click', closeDrawer);
+  overlay.addEventListener('click', closeDrawer);
+  document.getElementById('cart-clear').addEventListener('click', clearCart);
+
+  ensureButtons(); render(); window.addEventListener('load', ensureButtons); setTimeout(ensureButtons, 600);
+})();</script>
 </body>
 </html>
